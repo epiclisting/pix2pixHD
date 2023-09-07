@@ -14,6 +14,33 @@ from models.models import create_model
 import util.util as util
 from util.visualizer import Visualizer
 
+# Necessary to override the cached_cast function in amp.util when using apex / fp16
+# See issue here: https://github.com/NVIDIA/apex/pull/1282
+def override_cached_cast(cast_fn, x, cache):
+    if is_nested(x):
+        return type(x)([cached_cast(y) for y in x])
+    if x in cache:
+        cached_x = cache[x]
+        next_functions_available = False
+        if x.requires_grad and cached_x.requires_grad:
+            if len(cached_x.grad_fn.next_functions) > 1:
+                next_functions_available = True
+            # Make sure x is actually cached_x's autograd parent.
+            if next_functions_available and cached_x.grad_fn.next_functions[1][0].variable is not x:
+                raise RuntimeError("x and cache[x] both require grad, but x is not "
+                                   "cache[x]'s parent.  This is likely an error.")
+        if torch.is_grad_enabled() and x.requires_grad != cached_x.requires_grad:
+            del cache[x]
+        elif x.requires_grad and cached_x.requires_grad and not next_functions_available:
+            del cache[x]
+        else:
+            return cached_x
+
+    casted_x = cast_fn(x)
+    cache[x] = casted_x
+    return casted_x
+
+
 opt = TrainOptions().parse()
 iter_path = os.path.join(opt.checkpoints_dir, opt.name, 'iter.txt')
 if opt.continue_train:
@@ -42,7 +69,11 @@ model = create_model(opt)
 visualizer = Visualizer(opt)
 if opt.fp16:    
     from apex import amp
-    model, [optimizer_G, optimizer_D] = amp.initialize(model, [model.optimizer_G, model.optimizer_D], opt_level='O2')             
+    from apex.amp import util as amputil
+    print(amputil.cached_cast)
+    amputil.cached_cast = override_cached_cast
+    print(amputil.cached_cast)
+    model, [optimizer_G, optimizer_D] = amp.initialize(model, [model.optimizer_G, model.optimizer_D], opt_level='O1')             
     model = torch.nn.DataParallel(model, device_ids=opt.gpu_ids)
 else:
     optimizer_G, optimizer_D = model.module.optimizer_G, model.module.optimizer_D
