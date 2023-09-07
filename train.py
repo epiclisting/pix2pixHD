@@ -69,10 +69,10 @@ model = create_model(opt)
 visualizer = Visualizer(opt)
 if opt.fp16:    
     from apex import amp
-    from apex.amp import util as amputil
-    print(amputil.cached_cast)
-    amputil.cached_cast = override_cached_cast
-    print(amputil.cached_cast)
+    from apex.amp import utils as amputils
+    print(amputils.cached_cast)
+    amputils.cached_cast = override_cached_cast
+    print(amputils.cached_cast)
     model, [optimizer_G, optimizer_D] = amp.initialize(model, [model.optimizer_G, model.optimizer_D], opt_level='O1')             
     model = torch.nn.DataParallel(model, device_ids=opt.gpu_ids)
 else:
