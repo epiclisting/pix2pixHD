@@ -16,9 +16,12 @@ from util.visualizer import Visualizer
 
 # Necessary to override the cached_cast function in amp.util when using apex / fp16
 # See issue here: https://github.com/NVIDIA/apex/pull/1282
+def is_nested(x):
+    return isinstance(x, tuple) or isinstance(x, list)
+    
 def override_cached_cast(cast_fn, x, cache):
     if is_nested(x):
-        return type(x)([cached_cast(y) for y in x])
+        return type(x)([override_cached_cast(y) for y in x])
     if x in cache:
         cached_x = cache[x]
         next_functions_available = False
